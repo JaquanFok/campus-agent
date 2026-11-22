@@ -130,13 +130,13 @@ var history=[]; var convId=null;
 try{convId=localStorage.getItem("gc_conv_id")||null;}catch(e){}
 function ensureConv(){if(!convId){convId="c-"+Date.now()+"-"+Math.random().toString(36).slice(2,10);try{localStorage.setItem("gc_conv_id",convId);}catch(e){}}return convId;}
 var model=null,busy=false,controller=null;
-/* ---------- 运行环境自检：云服务强制精确 Origin 匹配 ---------- */
-var isPreview=(function(){
-  try{
-    var o=(location.origin||"").toLowerCase();
-    return o==="null"||o.indexOf("file:")===0||o.indexOf("localhost")>=0||o.indexOf("127.0.0.1")>=0||!/^https?:/.test(o);
-  }catch(e){return true;}
-})();
+/* ---------- 运行环境自检：云服务强制精确 Origin 匹配 ----------
+   只有正式发布域名才允许调用云端；其余一律视为预览环境（file://、localhost、
+   编辑器代理域名等），直接给出跳转引导，不再发起注定失败的请求。 */
+var OFFICIAL_HOST="campus-agent-76129.app.workbuddy.host";
+var OFFICIAL_URL="https://campus-agent-76129.app.workbuddy.host/?sharecode=SKXJBBSXV3";
+var isOfficial=(function(){try{return (location.host||"").toLowerCase()===OFFICIAL_HOST;}catch(e){return false;}})();
+var isPreview=!isOfficial;
 
 function el(tag,cls,text){var d=document.createElement(tag);if(cls)d.className=cls;if(text!==undefined)d.textContent=text;return d;}
 function addMsg(role,text){var m=el("div","msg "+role,text||"");document.getElementById("chat").appendChild(m);scrollMain();return m;}
@@ -157,7 +157,30 @@ function switchTab(which){
 
 /* ---------- 初始化 ---------- */
 addMsg("bot","你好，我是广财百事通——三水校区校园生活助手。\n热水门禁、快递地址、饭堂出行都可以问我；涉及时效的信息请以最新官方通知为准。");
-if(isPreview)addMsg("sys","当前为本地预览：云端问答与表白墙需从正式发布的在线链接访问（服务端 Origin 精确校验），发布后即可正常使用。");
+if(isPreview){
+  var tip=el("div","msg sys");
+  tip.style.cssText="max-width:100%;text-align:left;line-height:1.8;padding:14px;background:#FFF8E8;border-color:#E6C675;color:#7A5A12;";
+  tip.appendChild(el("div",null,"⚠️ 当前是本地 / 预览环境，云端功能不可用"));
+  var d1=el("div",null,"问答、表白墙要调用云端大模型和数据库，服务端按「精确 Origin」校验来源，只认正式发布域名。在这里点发送只会得到「网络异常」——这不是故障，是访问来源不对。");
+  d1.style.marginTop="6px";tip.appendChild(d1);
+  var go=el("button","btn","👉 打开正式版（可用完整功能）");
+  go.style.cssText="margin-top:10px;width:100%;height:38px;";
+  go.onclick=function(){window.open(OFFICIAL_URL,"_blank");};
+  tip.appendChild(go);
+  var cp=el("button","btn gray","复制链接");
+  cp.style.cssText="margin-top:6px;width:100%;height:32px;font-size:12px;";
+  cp.onclick=function(){
+    try{navigator.clipboard.writeText(OFFICIAL_URL);cp.textContent="已复制 ✓";}catch(e){prompt("复制这个链接：",OFFICIAL_URL);}
+  };
+  tip.appendChild(cp);
+  var d2=el("div",null,OFFICIAL_URL);
+  d2.style.cssText="margin-top:8px;font-size:11px;word-break:break-all;color:#9A7B3A;";
+  tip.appendChild(d2);
+  document.getElementById("chat").appendChild(tip);
+  var q=document.getElementById("q");q.placeholder="预览环境无法提问，请点上方按钮打开正式版";q.disabled=true;
+  document.getElementById("send").disabled=true;
+  scrollMain();
+}
 var suggBox=el("div","msg bot");suggBox.style.background="transparent";
 var sugg=el("div","sugg");
 ["热水几点有？","快递地址怎么填？","怎么回广州？","外卖能送到宿舍吗？"].forEach(function(q){
@@ -174,21 +197,25 @@ async function pickModel(){
   return model;
 }
 function llmErr(e){
-  var code="",rid="";
-  try{code=(e&&e.error&&e.error.code)||"";rid=(e&&e.requestId)||"";}catch(x){}
+  if(isPreview)return "当前是预览环境，云端功能不可用。请点页面上方的「打开正式版」按钮，从正式发布链接访问。";
+  var code="",rid="",msg="";
+  try{
+    code=(e&&e.error&&e.error.code)||(e&&e.code)||(e&&e.body&&e.body.code)||"";
+    rid=(e&&e.requestId)||(e&&e.headers&&e.headers.get&&e.headers.get("x-request-id"))||"";
+    msg=(e&&e.message)||"";
+  }catch(x){}
   var tail=rid?"（追踪号 "+rid+"）":"";
   if(e&&e.friendly)return e.friendly;
-  if(isPreview)return "当前在本地预览中打开：云端服务要求从正式发布的链接访问（Origin 精确校验）。请发布应用后从在线链接打开，问答与表白墙即可正常使用。";
-  if(e&&e.message&&/failed to fetch|network|load failed/i.test(e.message))return "无法连接云端服务，请检查网络或从正式发布链接打开。";
+  if(/failed to fetch|network|load failed/i.test(msg))return "无法连接云端服务，请检查网络。"+tail;
   if(code.indexOf("auth_")===0)return "访问来源校验失败：请从应用正式发布的链接打开。"+tail;
   if(code.indexOf("quota_")===0)return "调用额度受限，请稍后再试。"+tail;
-  if(code.indexOf("request_")===0)return "请求参数或模型不匹配，请重试或换个问法。";
-  if(code.indexOf("gateway_")===0||code.indexOf("model_")===0)return "模型服务暂时不可用，请重新发送。"+tail;
-  if(code.indexOf("internal_")===0)return "服务内部异常，请稍后再试。"+tail;
-  return "网络异常，请稍后再试。"+tail;
+  if(code.indexOf("request_")===0||code.indexOf("model_")===0)return "模型参数或权限不匹配，请重试或换个问法。"+tail;
+  if(code.indexOf("gateway_")===0||code.indexOf("internal_")===0)return "云端服务暂时不可用，请重新发送。"+tail;
+  return "请求未成功"+(code?"（"+code+"）":"")+(msg?"："+msg:"")+"。"+tail;
 }
 
 async function send(){
+  if(isPreview){addMsg("sys","预览环境无法调用云端，请点上方的「打开正式版」按钮。");return;}
   if(busy)return;
   var box=document.getElementById("q");var q=box.value.trim();
   if(!q)return;
@@ -251,6 +278,7 @@ function initWall(){
 }
 async function loadWall(){
   var list=document.getElementById("walllist");if(!list)return;
+  if(isPreview){list.textContent="预览环境无法读取云端数据，请从正式发布链接打开。";return;}
   list.textContent="加载中…";
   try{
     var r=await cloud.database.from("wall_posts").select("id,content,type,created_at").order("created_at",{ascending:false}).limit(10);
@@ -270,6 +298,7 @@ async function loadWall(){
   }catch(e){list.textContent="加载失败："+llmErr(e);}
 }
 async function submitWall(){
+  if(isPreview){var r0=document.getElementById("wres");r0.className="wres err";r0.textContent="预览环境无法投稿，请从正式发布链接打开。";return;}
   if(reviewBusy)return;
   var ta=document.getElementById("wta");var text=ta.value.trim();
   var res=document.getElementById("wres");
