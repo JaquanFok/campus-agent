@@ -126,7 +126,7 @@ var SYS="你是「广财百事通」，广东财经大学佛山（三水）校�
 "# 回答风格\n简洁分点，先给结论再给细节，一条回答一般不超过150字。用户问题模糊时（如只说「热水」），先反问澄清园区再回答。被问「你是不是官方的」时回答：我是学生团队维护的校园助手，非学校官方产品，重要事务请以官方渠道为准。";
 
 /* ---------- 聊天状态 ---------- */
-var history=[]; var convId=null;
+var chatHistory=[]; var convId=null;
 try{convId=localStorage.getItem("gc_conv_id")||null;}catch(e){}
 function ensureConv(){if(!convId){convId="c-"+Date.now()+"-"+Math.random().toString(36).slice(2,10);try{localStorage.setItem("gc_conv_id",convId);}catch(e){}}return convId;}
 var model=null,busy=false,controller=null;
@@ -225,7 +225,7 @@ async function send(){
     var m=await pickModel();
     var sysNow=SYS+kbContext(q);
     var msgs=[{role:"system",content:sysNow}];
-    history.slice(-6).forEach(function(h){msgs.push(h);});
+    chatHistory.slice(-6).forEach(function(h){msgs.push(h);});
     msgs.push({role:"user",content:q});
     controller=new AbortController();
     var reply="";var out=addMsg("bot","");
@@ -235,7 +235,7 @@ async function send(){
     }
     rmTyping();
     if(reply){
-      history.push({role:"user",content:q});history.push({role:"assistant",content:reply});
+      chatHistory.push({role:"user",content:q});chatHistory.push({role:"assistant",content:reply});
     }else{out.textContent="（未返回内容，请重试）";}
   }catch(e){
     rmTyping();
