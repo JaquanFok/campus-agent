@@ -1,0 +1,14 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# local tooling
+node_modules/
+*.log
+_check.js
+
+# local-only drafts (not part of the portfolio)
+*_local.*
